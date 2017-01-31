@@ -39,7 +39,7 @@ note: click to images on the top, you can see the visualization of the images
 ### latent space
 
 
-```python
+```
 python main.py --task eval --z_dims 2
 ```
 
