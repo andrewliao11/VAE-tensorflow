@@ -1,6 +1,6 @@
 # VAE-tensorflow
 this repo aims to implement Variational autoencoder in Tensorflow. To increase the speed of data flow, I use tf.FIFOQueue to speed up the training processs.   
-this repo can be a kick off project for you to dive into VAE for other domains!
+:fire: this repo can be a kick off project for you to dive into VAE for other domains!
 
 ## dependencies
 - python2
