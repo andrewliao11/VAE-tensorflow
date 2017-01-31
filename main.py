@@ -3,6 +3,7 @@ import numpy as np
 import os, argparse, pdb, multiprocessing
 import nn, construct_binary, reader
 from utils import *
+from tqdm import tqdm
 
 class Model(object):
 
@@ -13,14 +14,16 @@ class Model(object):
 
     def _get_latent_code(self, x):
 	x = tf.to_float(x)/255.
-	fc1 = nn.fc(x, 400, nl=tf.nn.relu, scope='e_fc1')
-	mu = nn.fc(fc1, self.z_dims, scope='e_fc_mu')
-	log_sigma_sq = nn.fc(fc1, self.z_dims, scope='e_fc_sigma')
+	fc1 = nn.fc(x, 500, nl=tf.nn.softplus, scope='e_fc1')
+	fc2 = nn.fc(fc1, 500, nl=tf.nn.softplus, scope='e_fc2')
+	mu = nn.fc(fc2, self.z_dims, scope='e_fc_mu')
+	log_sigma_sq = nn.fc(fc2, self.z_dims, scope='e_fc_sigma')
 	return mu, log_sigma_sq
 
     def _reconstruct(self, z):
-	fc1 = nn.fc(z, 400, nl=tf.nn.relu, scope='d_fc1')
-	_x = nn.fc(fc1, self.x_dims, nl=tf.nn.sigmoid, scope='d_fc2')
+	fc1 = nn.fc(z, 500, nl=tf.nn.softplus, scope='d_fc1')
+	fc2 = nn.fc(fc1, 500, nl=tf.nn.softplus, scope='d_fc2')
+	_x = nn.fc(fc2, self.x_dims, nl=tf.nn.sigmoid, scope='d_fc3')
 	return _x
 
     def _build_graph(self, x):
@@ -63,6 +66,7 @@ if __name__ == '__main__':
     parser.add_argument('--lr', type=float, default=3e-4,
                     help='initial learning rate')
     parser.add_argument('--batch_size', type=int, default=128)
+    parser.add_argument('--task', choices=['train', 'eval'], default='train')
     args = parser.parse_args()
 
     bin_filepath = 'mnist.tfrecords'
@@ -81,28 +85,47 @@ if __name__ == '__main__':
     global_step = tf.get_variable('global_step', [], 
 			initializer=tf.constant_initializer(0), trainable=False)
     train_op = tf.train.AdamOptimizer(args.lr).minimize(M.cost, global_step=global_step)
-    if not os.path.exists(bin_filepath):
-	os.makdir('./logs')
-    summary_writer = tf.summary.FileWriter('./logs')
-    summary_op = tf.summary.merge_all()
     saver = tf.train.Saver(max_to_keep=20)
 
     config = get_session_config(0.3, multiprocessing.cpu_count()/2)
     sess = tf.Session(config=config)
     init_op = tf.global_variables_initializer()
     sess.run(init_op)
+    if args.task != 'train':
+    	saver.restore(sess, tf.train.latest_checkpoint('./checkpoints'))
+    else:
+	if not os.path.exists(bin_filepath):
+            os.makdir('./logs')
+    	summary_writer = tf.summary.FileWriter('./logs')
+    	summary_op = tf.summary.merge_all()
     # creates threads to start all queue runners collected in the graph
     # [remember] always call init_op before start the runner
     tf.train.start_queue_runners(sess=sess)
-    step = 0
-    while True:
-  	_, summary_str, loss= sess.run([train_op, summary_op, M.cost])
-	summary_writer.add_summary(summary_str, step)
-	if step%100 == 0:
-	    if not os.path.exists('./checkpoints'):
-		os.mkdir('./checkpoints')
-	    saver.save(sess, os.path.join('./checkpoints', 'mnist'), global_step=global_step)
-	    print "==================================="
-	    print "[#] Iter", step
-	    print "[L] Loss =", loss
-	step += 1
+    if args.task == 'train':
+    	step = 0
+    	while True:
+  	    _, summary_str, loss= sess.run([train_op, summary_op, M.cost])
+	    summary_writer.add_summary(summary_str, step)
+	    if step%1000 == 0:
+	    	if not os.path.exists('./checkpoints'):
+		    os.mkdir('./checkpoints')
+	    	saver.save(sess, os.path.join('./checkpoints', 'mnist'), global_step=global_step)
+	    	print "==================================="
+	    	print "[#] Iter", step
+	    	print "[L] Loss =", loss
+	    step += 1
+    elif args.task == 'eval':
+	import matplotlib.pyplot as plt
+	z_list = [[] for i in range(10)]
+	zs = np.zeros([100*args.batch_size, 20])
+	labels = np.zeros([100*args.batch_size])
+	for i in tqdm(range(100)):
+	    zs[i*args.batch_size:(i+1)*args.batch_size, :], \
+	    labels[i*args.batch_size:(i+1)*args.batch_size] = \
+				sess.run([M.z, labels_batch])
+	plt.figure()
+	plt.scatter(zs[:,0], zs[:,1], c=labels)
+	plt.colorbar()
+	plt.grid()
+	plt.savefig('scatter.png')
+	plt.show()
