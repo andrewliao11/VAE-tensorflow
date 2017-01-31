@@ -34,7 +34,7 @@ cd logs
 tensorboard --logdir .
 ```
 
-note: click to images on the top, you can see the visualization of the images
+note: click to images on the top, you can see the visualization of the reconstructed images
 
 ### latent space
 
