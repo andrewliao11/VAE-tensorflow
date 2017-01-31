@@ -31,12 +31,12 @@ class Model(object):
 	    input_shape = x.get_shape().as_list()
 	    assert len(input_shape) == 2
 	    batch_size, self.x_dims = input_shape
-	    mu, log_sigma_sq = self._get_latent_code(x)
+	    self.mu, self.log_sigma_sq = self._get_latent_code(x)
 	    # N(z;0,I), unit gaussian
 	    eps = tf.random_normal((batch_size, self.z_dims), 0, 1, 
 				dtype=tf.float32) 
 	    # z = mu+sigma*eps
-	    self.z = tf.add(mu, tf.mul(tf.sqrt(tf.exp(log_sigma_sq)), eps))
+	    self.z = tf.add(self.mu, tf.mul(tf.sqrt(tf.exp(self.log_sigma_sq)), eps))
 	    self._x = self._reconstruct(self.z)
 	    # likelihood of Bernoulli
 	    # reference: https://onlinecourses.science.psu.edu/stat504/node/27
@@ -45,8 +45,8 @@ class Model(object):
 				(1-x_float)*tf.log(1e-8 + 1 - self._x), 1)	# B
 	    # kl divergence (prior: gaussian)
 	    # reference: http://stats.stackexchange.com/questions/7440/kl-divergence-between-two-univariate-gaussians
-	    kl_divergence = -0.5 * tf.reduce_sum(1 + log_sigma_sq \
-				- tf.square(mu) - tf.exp(log_sigma_sq), 1)	# B
+	    kl_divergence = -0.5 * tf.reduce_sum(1 + self.log_sigma_sq \
+				- tf.square(self.mu) - tf.exp(self.log_sigma_sq), 1)	# B
 	    self.cost = tf.reduce_mean(tf.add(likelihood_loss, kl_divergence))
 	    tf.summary.image("input_images", tf.reshape(x_float, [-1,28,28,1]))
 	    tf.summary.image("output_images", tf.reshape(self._x, [-1,28,28,1]))
@@ -66,6 +66,7 @@ if __name__ == '__main__':
     parser.add_argument('--lr', type=float, default=3e-4,
                     help='initial learning rate')
     parser.add_argument('--batch_size', type=int, default=128)
+    parser.add_argument('--z_dims', type=int, default=20)
     parser.add_argument('--task', choices=['train', 'eval'], default='train')
     args = parser.parse_args()
 
@@ -80,7 +81,7 @@ if __name__ == '__main__':
     	min_after_dequeue=1000
     )
     # build graph
-    M = Model()
+    M = Model(args.z_dims)
     M._build_graph(images_batch)
     global_step = tf.get_variable('global_step', [], 
 			initializer=tf.constant_initializer(0), trainable=False)
@@ -116,15 +117,14 @@ if __name__ == '__main__':
 	    step += 1
     elif args.task == 'eval':
 	import matplotlib.pyplot as plt
-	z_list = [[] for i in range(10)]
-	zs = np.zeros([100*args.batch_size, 20])
+	zs = np.zeros([100*args.batch_size, args.z_dims])
 	labels = np.zeros([100*args.batch_size])
 	for i in tqdm(range(100)):
 	    zs[i*args.batch_size:(i+1)*args.batch_size, :], \
 	    labels[i*args.batch_size:(i+1)*args.batch_size] = \
 				sess.run([M.z, labels_batch])
 	plt.figure()
-	plt.scatter(zs[:,0], zs[:,1], c=labels)
+	plt.scatter(zs[:,0], zs[:,1], c=labels.astype('int'))
 	plt.colorbar()
 	plt.grid()
 	plt.savefig('scatter.png')
